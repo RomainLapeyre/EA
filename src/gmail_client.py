@@ -18,6 +18,7 @@ PROCESSED_LABEL = "EA/Processed"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
 
 # Headers that indicate automated / bulk email — skip these.
@@ -159,11 +160,54 @@ class GmailClient:
             return ""
 
     # ------------------------------------------------------------------
+    # Signature
+    # ------------------------------------------------------------------
+
+    def get_signature(self) -> str:
+        """Return the plain-text version of the user's primary Gmail signature.
+
+        Requires the gmail.settings.basic scope.  Returns an empty string if
+        the scope is missing or no signature is configured.
+        """
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .sendAs()
+                .list(userId="me")
+                .execute()
+            )
+            for send_as in result.get("sendAs", []):
+                if send_as.get("isDefault"):
+                    raw_sig = send_as.get("signature", "")
+                    if raw_sig:
+                        converter = html2text.HTML2Text()
+                        converter.ignore_links = False
+                        converter.ignore_images = True
+                        converter.body_width = 0
+                        return converter.handle(raw_sig).strip()
+            return ""
+        except HttpError as exc:
+            logger.warning("Could not fetch Gmail signature: %s", exc)
+            return ""
+
+    # ------------------------------------------------------------------
     # Drafts
     # ------------------------------------------------------------------
 
-    def create_draft_reply(self, original_email: dict, draft_body: str) -> str:
-        """Create a Gmail draft as a reply to *original_email*."""
+    def create_draft_reply(
+        self, original_email: dict, draft_body: str, signature: str = ""
+    ) -> str:
+        """Create a Gmail draft as a reply to *original_email*.
+
+        If *signature* is provided it is appended after the draft body,
+        separated by the conventional ``-- `` delimiter.
+        """
+        if signature:
+            full_body = f"{draft_body}\n\n-- \n{signature}"
+        else:
+            full_body = draft_body
+
         msg = MIMEMultipart()
         msg["To"] = original_email["from"]
         msg["Subject"] = (
@@ -174,7 +218,7 @@ class GmailClient:
         if original_email["message_id_header"]:
             msg["In-Reply-To"] = original_email["message_id_header"]
             msg["References"] = original_email["message_id_header"]
-        msg.attach(MIMEText(draft_body, "plain"))
+        msg.attach(MIMEText(full_body, "plain"))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         draft = (

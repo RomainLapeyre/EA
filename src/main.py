@@ -63,6 +63,13 @@ def main() -> None:
     if dry_run:
         logger.info("DRY RUN mode — no drafts will be created.")
 
+    # Fetch the Gmail signature once; appended to every draft.
+    signature = gmail.get_signature()
+    if signature:
+        logger.info("Gmail signature loaded (%d chars).", len(signature))
+    else:
+        logger.info("No Gmail signature found — drafts will have no sign-off block.")
+
     # ------------------------------------------------------------------
     # Process emails
     # ------------------------------------------------------------------
@@ -101,9 +108,14 @@ def main() -> None:
             )
 
             if dry_run:
-                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}\n")
+                sig_preview = f"\n\n-- \n{signature}" if signature else ""
+                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}{sig_preview}\n")
             else:
-                gmail.create_draft_reply(original_email=email, draft_body=draft_body)
+                gmail.create_draft_reply(
+                    original_email=email,
+                    draft_body=draft_body,
+                    signature=signature,
+                )
                 gmail.mark_as_processed(email["id"])
 
             processed += 1
