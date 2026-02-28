@@ -74,7 +74,7 @@ class GmailClient:
 
     def get_unprocessed_emails(self, max_results: int = 10) -> list[dict]:
         """Return up to *max_results* unread inbox emails not yet processed."""
-        query = f"is:unread in:inbox -label:{PROCESSED_LABEL}"
+        query = f"is:unread in:inbox category:primary -label:{PROCESSED_LABEL}"
         try:
             result = (
                 self.service.users()
