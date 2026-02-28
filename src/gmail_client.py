@@ -18,7 +18,6 @@ PROCESSED_LABEL = "EA/Processed"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
 
 # Headers that indicate automated / bulk email — skip these.
