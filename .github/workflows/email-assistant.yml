@@ -2,7 +2,10 @@ name: AI Email Assistant
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Every hour
+    - cron: '0 12 * * *'   #  7:00 AM ET (UTC-5)
+    - cron: '0 17 * * *'   # 12:00 PM ET
+    - cron: '0 22 * * *'   #  5:00 PM ET
+    - cron: '0 1  * * *'   #  8:00 PM ET
   workflow_dispatch:
     inputs:
       max_emails:
