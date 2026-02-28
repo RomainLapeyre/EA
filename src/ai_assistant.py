@@ -10,6 +10,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _MODEL = "claude-opus-4-6"
+_CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
 _MAX_TOKENS = 1024
 
 # Path to the user-editable persona file
@@ -43,6 +44,29 @@ class AIAssistant:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.persona = _load_persona()
+
+    def classify_email(self, email: dict) -> str:
+        """Return 'reply' if the email warrants a draft, or 'skip' if it should be archived.
+
+        Skipped emails are newsletters, marketing blasts, cold outreach, automated
+        notifications, and any other bulk or impersonal mail.
+        """
+        prompt = (
+            f"Subject: {email['subject']}\n"
+            f"From: {email['from']}\n\n"
+            f"{email['body'][:1000]}\n\n"
+            "Is this email a personal/direct message that warrants a reply, "
+            "or is it a newsletter, cold outreach, sales pitch, marketing email, "
+            "or automated notification that should be archived without a reply?\n"
+            "Reply with exactly one word: 'reply' or 'skip'."
+        )
+        response = self.client.messages.create(
+            model=_CLASSIFY_MODEL,
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result = response.content[0].text.strip().lower()
+        return "reply" if result.startswith("reply") else "skip"
 
     def generate_draft_reply(
         self,

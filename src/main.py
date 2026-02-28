@@ -86,6 +86,15 @@ def main() -> None:
         logger.info("Processing: '%s' from %s", subject, sender)
 
         try:
+            # Classify before doing any work
+            classification = ai.classify_email(email)
+            if classification == "skip":
+                logger.info("Skipping (newsletter/cold outreach): '%s'", subject)
+                if not dry_run:
+                    gmail.archive_as_newsletter(email["id"])
+                processed += 1
+                continue
+
             # Gather thread history for better context
             thread_history = gmail.get_thread_history(email["thread_id"], email["id"])
 

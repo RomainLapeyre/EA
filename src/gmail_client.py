@@ -15,6 +15,7 @@ from googleapiclient.errors import HttpError
 logger = logging.getLogger(__name__)
 
 PROCESSED_LABEL = "EA/Processed"
+NEWSLETTER_LABEL = "EA/Newsletter"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
@@ -37,6 +38,7 @@ class GmailClient:
         creds.refresh(Request())
         self.service = build("gmail", "v1", credentials=creds)
         self._processed_label_id = self._get_or_create_label(PROCESSED_LABEL)
+        self._newsletter_label_id = self._get_or_create_label(NEWSLETTER_LABEL)
 
     # ------------------------------------------------------------------
     # Label management
@@ -247,6 +249,17 @@ class GmailClient:
             userId="me",
             id=message_id,
             body={"addLabelIds": [self._processed_label_id]},
+        ).execute()
+
+    def archive_as_newsletter(self, message_id: str) -> None:
+        """Label as EA/Newsletter, remove from inbox, and mark processed."""
+        self.service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={
+                "addLabelIds": [self._newsletter_label_id, self._processed_label_id],
+                "removeLabelIds": ["INBOX", "UNREAD"],
+            },
         ).execute()
 
     # ------------------------------------------------------------------
