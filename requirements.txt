@@ -1,0 +1,9 @@
+anthropic>=0.40.0
+google-auth>=2.27.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.118.0
+notion-client>=2.2.1
+requests>=2.31.0
+html2text>=2024.2.26
+PyYAML>=6.0.1
+python-dotenv>=1.0.0

@@ -1,0 +1,40 @@
+# ============================================================
+#  Executive Assistant — Persona Configuration
+# ============================================================
+#
+#  Fill in the values below to personalise the assistant.
+#  This file is committed to the repo; do NOT put secrets here.
+#  Secrets (API keys, tokens) must go in GitHub Actions Secrets.
+#
+#  All fields are optional — the assistant falls back to the
+#  environment variables listed in .env.example if a field is
+#  left blank or set to null.
+# ============================================================
+
+# Your full name as it should appear in email sign-offs.
+name: ""
+
+# Your job title, e.g. "CEO", "Head of Product", "Founder"
+role: ""
+
+# Your company or organisation name.
+company: ""
+
+# Writing tone for generated drafts.
+# Examples: "professional and concise", "warm and direct", "formal"
+tone: "professional and concise"
+
+# How the email should be signed off. Use {name} as a placeholder.
+# Examples: "Best,\n{name}", "Thanks,\n{name}", "Kind regards,\n{name}"
+sign_off: "Best,\n{name}"
+
+# Additional notes that help the assistant represent you accurately.
+# Include things like: recurring topics, preferred phrasing, what to
+# avoid, typical commitments you make, standing policies, etc.
+# This content is sent to the AI with every request.
+notes: |
+  # Add any persona notes here.
+  # Example:
+  #   - I prefer bullet points over long paragraphs.
+  #   - I never commit to meetings without checking my calendar first.
+  #   - When declining, always offer an alternative.

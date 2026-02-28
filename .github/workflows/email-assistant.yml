@@ -1,0 +1,64 @@
+name: AI Email Assistant
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # Every hour
+  workflow_dispatch:
+    inputs:
+      max_emails:
+        description: 'Maximum number of emails to process (default: 10)'
+        required: false
+        default: '10'
+      dry_run:
+        description: 'Dry run — analyze emails but do not create drafts'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  process-emails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI Email Assistant
+        env:
+          # --- Gmail (required) ---
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+
+          # --- Anthropic / Claude (required) ---
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # --- Notion (optional) ---
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_PAGE_IDS: ${{ secrets.NOTION_PAGE_IDS }}
+
+          # --- HubSpot (optional) ---
+          HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+
+          # --- Behaviour ---
+          MAX_EMAILS: ${{ github.event.inputs.max_emails || '10' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: python src/main.py
