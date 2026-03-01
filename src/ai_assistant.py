@@ -75,6 +75,8 @@ class AIAssistant:
         thread_history: str = "",
         notion_context: str = "",
         hubspot_context: str = "",
+        ashby_context: str = "",
+        calendar_context: str = "",
     ) -> str:
         """Return a draft reply body for *email*."""
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
@@ -90,6 +92,8 @@ class AIAssistant:
             thread_history=thread_history,
             notion_context=notion_context,
             hubspot_context=hubspot_context,
+            ashby_context=ashby_context,
+            calendar_context=calendar_context,
         )
 
         logger.debug("Sending email to Claude for drafting (subject: %s)", email["subject"])
@@ -115,6 +119,8 @@ def _build_user_message(
     thread_history: str,
     notion_context: str,
     hubspot_context: str,
+    ashby_context: str = "",
+    calendar_context: str = "",
 ) -> str:
     parts = []
 
@@ -131,6 +137,12 @@ def _build_user_message(
 
     if hubspot_context:
         parts.append(f"\n{hubspot_context}")
+
+    if ashby_context:
+        parts.append(f"\n{ashby_context}")
+
+    if calendar_context:
+        parts.append(f"\n{calendar_context}")
 
     if notion_context:
         parts.append(f"\n{notion_context}")

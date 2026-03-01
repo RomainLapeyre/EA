@@ -9,6 +9,8 @@ import os
 import sys
 
 from ai_assistant import AIAssistant
+from ashby_context import AshbyContextClient
+from calendar_context import CalendarContextClient
 from gmail_client import GmailClient
 from hubspot_context import HubSpotContextClient
 from notion_context import NotionContextClient
@@ -56,6 +58,20 @@ def main() -> None:
     if os.environ.get("HUBSPOT_ACCESS_TOKEN"):
         logger.info("Initialising HubSpot client…")
         hubspot = HubSpotContextClient(access_token=os.environ["HUBSPOT_ACCESS_TOKEN"])
+
+    calendar: CalendarContextClient | None = None
+    if os.environ.get("GOOGLE_CALENDAR_ENABLED", "false").lower() == "true":
+        logger.info("Initialising Google Calendar client…")
+        calendar = CalendarContextClient(
+            client_id=_require("GMAIL_CLIENT_ID"),
+            client_secret=_require("GMAIL_CLIENT_SECRET"),
+            refresh_token=_require("GMAIL_REFRESH_TOKEN"),
+        )
+
+    ashby: AshbyContextClient | None = None
+    if os.environ.get("ASHBY_API_KEY"):
+        logger.info("Initialising Ashby client…")
+        ashby = AshbyContextClient(api_key=os.environ["ASHBY_API_KEY"])
 
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
     max_emails = int(os.environ.get("MAX_EMAILS", "10"))
@@ -108,12 +124,22 @@ def main() -> None:
             if hubspot:
                 hubspot_context = hubspot.get_contact_context(sender)
 
+            ashby_context = ""
+            if ashby:
+                ashby_context = ashby.get_candidate_context(sender)
+
+            calendar_context = ""
+            if calendar:
+                calendar_context = calendar.get_upcoming_context()
+
             # Generate draft
             draft_body = ai.generate_draft_reply(
                 email=email,
                 thread_history=thread_history,
                 notion_context=notion_context,
                 hubspot_context=hubspot_context,
+                ashby_context=ashby_context,
+                calendar_context=calendar_context,
             )
 
             if dry_run:

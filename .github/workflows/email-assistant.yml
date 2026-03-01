@@ -61,6 +61,14 @@ jobs:
           # --- HubSpot (optional) ---
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
 
+          # --- Ashby ATS (optional) ---
+          ASHBY_API_KEY: ${{ secrets.ASHBY_API_KEY }}
+
+          # --- Google Calendar (optional) ---
+          # Set the repository variable GOOGLE_CALENDAR_ENABLED=true to activate.
+          # The GMAIL_REFRESH_TOKEN must be re-authorised with calendar.readonly scope.
+          GOOGLE_CALENDAR_ENABLED: ${{ vars.GOOGLE_CALENDAR_ENABLED || 'false' }}
+
           # --- Behaviour ---
           MAX_EMAILS: ${{ github.event.inputs.max_emails || '10' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
