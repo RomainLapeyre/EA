@@ -74,7 +74,6 @@ def main() -> None:
         ashby = AshbyContextClient(api_key=os.environ["ASHBY_API_KEY"])
 
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
-    max_emails = int(os.environ.get("MAX_EMAILS", "10"))
 
     if dry_run:
         logger.info("DRY RUN mode — no drafts will be created.")
@@ -89,8 +88,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Process emails
     # ------------------------------------------------------------------
-    logger.info("Fetching up to %d unprocessed emails…", max_emails)
-    emails = gmail.get_unprocessed_emails(max_results=max_emails)
+    logger.info("Fetching all unprocessed primary inbox emails without existing drafts…")
+    emails = gmail.get_unprocessed_emails()
     logger.info("Found %d email(s) to process.", len(emails))
 
     processed = 0

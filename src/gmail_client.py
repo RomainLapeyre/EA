@@ -74,21 +74,40 @@ class GmailClient:
     # Fetching emails
     # ------------------------------------------------------------------
 
-    def get_unprocessed_emails(self, max_results: int = 10) -> list[dict]:
-        """Return up to *max_results* unread inbox emails not yet processed."""
-        query = f"is:unread in:inbox category:primary -label:{PROCESSED_LABEL}"
+    def get_draft_thread_ids(self) -> set[str]:
+        """Return the set of thread IDs that already have a draft."""
         try:
-            result = (
-                self.service.users()
-                .messages()
-                .list(userId="me", q=query, maxResults=max_results)
-                .execute()
-            )
+            result = self.service.users().drafts().list(userId="me").execute()
+            thread_ids: set[str] = set()
+            for draft in result.get("drafts", []):
+                tid = draft.get("message", {}).get("threadId")
+                if tid:
+                    thread_ids.add(tid)
+            return thread_ids
+        except HttpError as exc:
+            logger.warning("Could not fetch existing drafts: %s", exc)
+            return set()
+
+    def get_unprocessed_emails(self) -> list[dict]:
+        """Return all primary inbox emails not yet processed and without existing drafts."""
+        query = f"in:inbox category:primary -label:{PROCESSED_LABEL}"
+        draft_thread_ids = self.get_draft_thread_ids()
+        try:
             emails = []
-            for ref in result.get("messages", []):
-                parsed = self._parse_message(ref["id"])
-                if parsed and not self._is_automated(parsed):
-                    emails.append(parsed)
+            page_token = None
+            while True:
+                kwargs: dict = {"userId": "me", "q": query}
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                result = self.service.users().messages().list(**kwargs).execute()
+                for ref in result.get("messages", []):
+                    parsed = self._parse_message(ref["id"])
+                    if parsed and not self._is_automated(parsed):
+                        if parsed["thread_id"] not in draft_thread_ids:
+                            emails.append(parsed)
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
             return emails
         except HttpError as exc:
             logger.error("Error listing emails: %s", exc)
