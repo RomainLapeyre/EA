@@ -1,12 +1,12 @@
 """Gmail API client — fetch unread emails and create draft replies."""
 
 import base64
+import html as _html
 import logging
 import re
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import html2text
+import html2text  # used in _extract_body
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -184,7 +184,7 @@ class GmailClient:
     # ------------------------------------------------------------------
 
     def get_signature(self) -> str:
-        """Return the plain-text version of the user's primary Gmail signature.
+        """Return the raw HTML of the user's primary Gmail signature.
 
         Requires the gmail.settings.basic scope.  Returns an empty string if
         the scope is missing or no signature is configured.
@@ -199,13 +199,7 @@ class GmailClient:
             )
             for send_as in result.get("sendAs", []):
                 if send_as.get("isDefault"):
-                    raw_sig = send_as.get("signature", "")
-                    if raw_sig:
-                        converter = html2text.HTML2Text()
-                        converter.ignore_links = False
-                        converter.ignore_images = True
-                        converter.body_width = 0
-                        return converter.handle(raw_sig).strip()
+                    return send_as.get("signature", "")
             return ""
         except HttpError as exc:
             logger.warning("Could not fetch Gmail signature: %s", exc)
@@ -220,15 +214,22 @@ class GmailClient:
     ) -> str:
         """Create a Gmail draft as a reply to *original_email*.
 
-        If *signature* is provided it is appended after the draft body,
-        separated by the conventional ``-- `` delimiter.
+        The draft is sent as HTML so that the signature (raw Gmail HTML) renders
+        with working hyperlinks. If *signature* is provided it is appended after
+        the body, separated by the conventional ``--`` delimiter.
         """
+        body_html = _text_to_html(draft_body)
         if signature:
-            full_body = f"{draft_body}\n\n-- \n{signature}"
+            html = (
+                f"<div>{body_html}</div>"
+                f"<div><br></div>"
+                f"<div>--&nbsp;</div>"
+                f"{signature}"
+            )
         else:
-            full_body = draft_body
+            html = f"<div>{body_html}</div>"
 
-        msg = MIMEMultipart()
+        msg = MIMEText(html, "html", "utf-8")
         msg["To"] = original_email["from"]
         msg["Subject"] = (
             original_email["subject"]
@@ -238,7 +239,6 @@ class GmailClient:
         if original_email["message_id_header"]:
             msg["In-Reply-To"] = original_email["message_id_header"]
             msg["References"] = original_email["message_id_header"]
-        msg.attach(MIMEText(full_body, "plain"))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         draft = (
@@ -318,6 +318,17 @@ class GmailClient:
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
+
+def _text_to_html(text: str) -> str:
+    """Convert a plain-text email body to simple HTML.
+
+    Double newlines become paragraph breaks; single newlines become <br>.
+    """
+    paragraphs = _html.escape(text).split("\n\n")
+    return "".join(
+        f"<p>{para.replace(chr(10), '<br>')}</p>" for para in paragraphs
+    )
+
 
 def _extract_email(header: str) -> str:
     match = re.search(r"<(.+?)>", header)
