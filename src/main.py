@@ -128,7 +128,31 @@ def main() -> None:
                 ashby_context = ashby.get_candidate_context(sender)
 
             calendar_context = ""
-            if calendar:
+            free_slots_context = ""
+            if classification == "meeting":
+                logger.info("Meeting request detected: '%s'", subject)
+                if calendar:
+                    sched = ai.persona.get("scheduling", {})
+                    free_slots_context = calendar.get_free_slots(
+                        timezone=sched.get("timezone", "America/New_York"),
+                        working_hours_start=int(sched.get("working_hours_start", 9)),
+                        working_hours_end=int(sched.get("working_hours_end", 18)),
+                        slot_duration_minutes=int(sched.get("slot_duration_minutes", 30)),
+                        lookahead_days=int(sched.get("lookahead_days", 7)),
+                        slots_to_propose=int(sched.get("slots_to_propose", 3)),
+                    )
+                    logger.info("Free slots context: %d chars", len(free_slots_context))
+                    calendar_context = calendar.get_upcoming_context()
+                else:
+                    logger.warning(
+                        "Meeting request detected but GOOGLE_CALENDAR_ENABLED is not set."
+                    )
+                    free_slots_context = (
+                        "=== Scheduling note ===\n"
+                        "Calendar integration is not enabled. "
+                        "[ROMAIN TO VERIFY AVAILABILITY before confirming any times.]"
+                    )
+            elif calendar:
                 calendar_context = calendar.get_upcoming_context()
 
             # Generate draft
@@ -139,6 +163,7 @@ def main() -> None:
                 hubspot_context=hubspot_context,
                 ashby_context=ashby_context,
                 calendar_context=calendar_context,
+                free_slots_context=free_slots_context,
             )
 
             if dry_run:

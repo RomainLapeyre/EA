@@ -47,19 +47,25 @@ class AIAssistant:
         self.persona = _load_persona()
 
     def classify_email(self, email: dict) -> str:
-        """Return 'reply' if the email warrants a draft, or 'skip' if it should be archived.
+        """Return 'meeting', 'reply', or 'skip'.
 
-        Skipped emails are newsletters, marketing blasts, cold outreach, automated
-        notifications, and any other bulk or impersonal mail.
+        'meeting' — personal message primarily asking to schedule a meeting/call.
+        'reply'   — personal message that warrants a reply (not primarily scheduling).
+        'skip'    — newsletter, cold outreach, sales pitch, or automated mail.
         """
         prompt = (
             f"Subject: {email['subject']}\n"
             f"From: {email['from']}\n\n"
             f"{email['body'][:1000]}\n\n"
-            "Is this email a personal/direct message that warrants a reply, "
-            "or is it a newsletter, cold outreach, sales pitch, marketing email, "
-            "or automated notification that should be archived without a reply?\n"
-            "Reply with exactly one word: 'reply' or 'skip'."
+            "Classify this email into exactly one of three categories:\n"
+            "- 'meeting': a personal/direct message that is primarily asking to "
+            "schedule a meeting, call, or find a time (e.g. 'let's find a time', "
+            "'what's your availability', 'can we meet', 'hop on a call').\n"
+            "- 'reply': a personal/direct message that warrants a reply but is "
+            "NOT primarily about scheduling a meeting.\n"
+            "- 'skip': a newsletter, cold outreach, sales pitch, marketing email, "
+            "or automated notification that should be archived without a reply.\n"
+            "Reply with exactly one word: 'meeting', 'reply', or 'skip'."
         )
         response = self.client.messages.create(
             model=_CLASSIFY_MODEL,
@@ -67,7 +73,11 @@ class AIAssistant:
             messages=[{"role": "user", "content": prompt}],
         )
         result = response.content[0].text.strip().lower()
-        return "reply" if result.startswith("reply") else "skip"
+        if result.startswith("meeting"):
+            return "meeting"
+        if result.startswith("reply"):
+            return "reply"
+        return "skip"
 
     def generate_draft_reply(
         self,
@@ -77,6 +87,7 @@ class AIAssistant:
         hubspot_context: str = "",
         ashby_context: str = "",
         calendar_context: str = "",
+        free_slots_context: str = "",
     ) -> str:
         """Return a draft reply body for *email*."""
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
@@ -94,6 +105,7 @@ class AIAssistant:
             hubspot_context=hubspot_context,
             ashby_context=ashby_context,
             calendar_context=calendar_context,
+            free_slots_context=free_slots_context,
         )
 
         logger.debug("Sending email to Claude for drafting (subject: %s)", email["subject"])
@@ -121,6 +133,7 @@ def _build_user_message(
     hubspot_context: str,
     ashby_context: str = "",
     calendar_context: str = "",
+    free_slots_context: str = "",
 ) -> str:
     parts = []
 
@@ -141,16 +154,25 @@ def _build_user_message(
     if ashby_context:
         parts.append(f"\n{ashby_context}")
 
-    if calendar_context:
+    if free_slots_context:
+        parts.append(f"\n{free_slots_context}")
+    elif calendar_context:
         parts.append(f"\n{calendar_context}")
 
     if notion_context:
         parts.append(f"\n{notion_context}")
 
-    parts.append(
-        "\nPlease draft a reply to the email above. "
+    closing = (
+        "Please draft a reply to the email above. "
         "Use the CRM and knowledge-base context where relevant, but do not force it in."
     )
+    if free_slots_context:
+        closing += (
+            " This email is requesting a meeting. "
+            "Propose the specific available time slots listed above. "
+            "Do not invent or guess times — only use the slots provided."
+        )
+    parts.append(f"\n{closing}")
 
     return "\n\n".join(parts)
 

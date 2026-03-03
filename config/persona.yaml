@@ -28,6 +28,21 @@ tone: "warm and direct"
 # Leave empty — the assistant appends your real Gmail signature automatically.
 sign_off: ""
 
+# Scheduling preferences — used when the assistant detects a meeting request.
+# All fields are optional; sensible defaults apply if this block is omitted.
+scheduling:
+  # IANA timezone name for interpreting working hours.
+  timezone: "America/New_York"
+  # Working hours during which slots may be offered (24-hour clock).
+  working_hours_start: 9
+  working_hours_end: 18
+  # Minimum slot duration to offer, in minutes.
+  slot_duration_minutes: 30
+  # How many calendar days ahead to search for free slots.
+  lookahead_days: 7
+  # How many slots to propose in the reply.
+  slots_to_propose: 3
+
 # Additional notes that help the assistant represent you accurately.
 # Include things like: recurring topics, preferred phrasing, what to
 # avoid, typical commitments you make, standing policies, etc.
