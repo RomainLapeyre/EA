@@ -61,6 +61,11 @@ jobs:
           # --- HubSpot (optional) ---
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
 
+          # --- Gong (optional) ---
+          GONG_BASE_URL: ${{ secrets.GONG_BASE_URL }}
+          GONG_ACCESS_KEY: ${{ secrets.GONG_ACCESS_KEY }}
+          GONG_ACCESS_SECRET: ${{ secrets.GONG_ACCESS_SECRET }}
+
           # --- Ashby ATS (optional) ---
           ASHBY_API_KEY: ${{ secrets.ASHBY_API_KEY }}
 

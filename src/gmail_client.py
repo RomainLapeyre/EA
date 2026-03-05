@@ -41,6 +41,7 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=creds)
         self._processed_label_id = self._get_or_create_label(PROCESSED_LABEL)
         self._newsletter_label_id = self._get_or_create_label(NEWSLETTER_LABEL)
+        self._my_email = self._fetch_my_email()
 
     # ------------------------------------------------------------------
     # Label management
@@ -76,6 +77,11 @@ class GmailClient:
     # Fetching emails
     # ------------------------------------------------------------------
 
+    def _fetch_my_email(self) -> str:
+        """Return the authenticated user's email address."""
+        profile = self.service.users().getProfile(userId="me").execute()
+        return profile["emailAddress"]
+
     def get_draft_thread_ids(self) -> set[str]:
         """Return the set of thread IDs that already have a draft."""
         try:
@@ -91,29 +97,59 @@ class GmailClient:
             return set()
 
     def get_unprocessed_emails(self) -> list[dict]:
-        """Return all primary inbox emails not yet processed and without existing drafts."""
+        """Return threads whose last message is not from the user and have no existing draft."""
         query = f"in:inbox category:primary -label:{PROCESSED_LABEL}"
         draft_thread_ids = self.get_draft_thread_ids()
         try:
-            emails = []
+            thread_ids: list[str] = []
             page_token = None
             while True:
                 kwargs: dict = {"userId": "me", "q": query}
                 if page_token:
                     kwargs["pageToken"] = page_token
-                result = self.service.users().messages().list(**kwargs).execute()
-                for ref in result.get("messages", []):
-                    parsed = self._parse_message(ref["id"])
-                    if parsed and not self._is_automated(parsed):
-                        if parsed["thread_id"] not in draft_thread_ids:
-                            emails.append(parsed)
+                result = self.service.users().threads().list(**kwargs).execute()
+                for ref in result.get("threads", []):
+                    if ref["id"] not in draft_thread_ids:
+                        thread_ids.append(ref["id"])
                 page_token = result.get("nextPageToken")
                 if not page_token:
                     break
+
+            emails = []
+            for tid in thread_ids:
+                last_msg = self._get_last_message_if_not_mine(tid)
+                if last_msg and not self._is_automated(last_msg):
+                    emails.append(last_msg)
             return emails
         except HttpError as exc:
-            logger.error("Error listing emails: %s", exc)
+            logger.error("Error listing threads: %s", exc)
             raise
+
+    def _get_last_message_if_not_mine(self, thread_id: str) -> dict | None:
+        """Return the last message in *thread_id* if it was NOT sent by the user, else None."""
+        try:
+            thread = (
+                self.service.users()
+                .threads()
+                .get(userId="me", id=thread_id, format="full")
+                .execute()
+            )
+            messages = thread.get("messages", [])
+            if not messages:
+                return None
+            last_msg = messages[-1]
+            headers = {
+                h["name"].lower(): h["value"]
+                for h in last_msg["payload"].get("headers", [])
+            }
+            from_email = _extract_email(headers.get("from", ""))
+            if from_email.lower() == self._my_email.lower():
+                logger.debug("Skipping thread %s — last message is from me.", thread_id)
+                return None
+            return self._parse_message(last_msg["id"])
+        except HttpError as exc:
+            logger.warning("Could not inspect thread %s: %s", thread_id, exc)
+            return None
 
     def _parse_message(self, message_id: str) -> dict | None:
         """Fetch and parse a single Gmail message into a plain dict."""
