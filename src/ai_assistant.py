@@ -10,6 +10,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _MODEL = "claude-opus-4-6"
+_CLASSIFY_MODEL = "claude-haiku-4-5-20251001"
 _MAX_TOKENS = 1024
 
 # Path to the user-editable persona file
@@ -33,7 +34,8 @@ Your job is to draft professional, ready-to-send email replies on their behalf.
   placeholder like [YOUR DECISION HERE] and briefly explain what is needed.
 • Do NOT include a subject line — only write the email body.
 • Do NOT add a preamble like "Here is a draft:" — output only the email text.
-• Sign off with: {sign_off}
+• Do NOT add any sign-off, valediction, or closing name — the sender's signature
+  is appended automatically by Gmail.
 """
 
 
@@ -44,12 +46,48 @@ class AIAssistant:
         self.client = anthropic.Anthropic(api_key=api_key)
         self.persona = _load_persona()
 
+    def classify_email(self, email: dict) -> str:
+        """Return 'meeting', 'reply', or 'skip'.
+
+        'meeting' — personal message primarily asking to schedule a meeting/call.
+        'reply'   — personal message that warrants a reply (not primarily scheduling).
+        'skip'    — newsletter, cold outreach, sales pitch, or automated mail.
+        """
+        prompt = (
+            f"Subject: {email['subject']}\n"
+            f"From: {email['from']}\n\n"
+            f"{email['body'][:1000]}\n\n"
+            "Classify this email into exactly one of three categories:\n"
+            "- 'meeting': a personal/direct message that is primarily asking to "
+            "schedule a meeting, call, or find a time (e.g. 'let's find a time', "
+            "'what's your availability', 'can we meet', 'hop on a call').\n"
+            "- 'reply': a personal/direct message that warrants a reply but is "
+            "NOT primarily about scheduling a meeting.\n"
+            "- 'skip': a newsletter, cold outreach, sales pitch, marketing email, "
+            "or automated notification that should be archived without a reply.\n"
+            "Reply with exactly one word: 'meeting', 'reply', or 'skip'."
+        )
+        response = self.client.messages.create(
+            model=_CLASSIFY_MODEL,
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result = response.content[0].text.strip().lower()
+        if result.startswith("meeting"):
+            return "meeting"
+        if result.startswith("reply"):
+            return "reply"
+        return "skip"
+
     def generate_draft_reply(
         self,
         email: dict,
         thread_history: str = "",
         notion_context: str = "",
         hubspot_context: str = "",
+        ashby_context: str = "",
+        calendar_context: str = "",
+        free_slots_context: str = "",
     ) -> str:
         """Return a draft reply body for *email*."""
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
@@ -57,7 +95,6 @@ class AIAssistant:
             role=self.persona["role"],
             company=self.persona["company"],
             tone=self.persona["tone"],
-            sign_off=self.persona["sign_off"],
             persona_notes=self.persona.get("notes", ""),
         )
 
@@ -66,6 +103,9 @@ class AIAssistant:
             thread_history=thread_history,
             notion_context=notion_context,
             hubspot_context=hubspot_context,
+            ashby_context=ashby_context,
+            calendar_context=calendar_context,
+            free_slots_context=free_slots_context,
         )
 
         logger.debug("Sending email to Claude for drafting (subject: %s)", email["subject"])
@@ -91,6 +131,9 @@ def _build_user_message(
     thread_history: str,
     notion_context: str,
     hubspot_context: str,
+    ashby_context: str = "",
+    calendar_context: str = "",
+    free_slots_context: str = "",
 ) -> str:
     parts = []
 
@@ -108,13 +151,28 @@ def _build_user_message(
     if hubspot_context:
         parts.append(f"\n{hubspot_context}")
 
+    if ashby_context:
+        parts.append(f"\n{ashby_context}")
+
+    if free_slots_context:
+        parts.append(f"\n{free_slots_context}")
+    elif calendar_context:
+        parts.append(f"\n{calendar_context}")
+
     if notion_context:
         parts.append(f"\n{notion_context}")
 
-    parts.append(
-        "\nPlease draft a reply to the email above. "
+    closing = (
+        "Please draft a reply to the email above. "
         "Use the CRM and knowledge-base context where relevant, but do not force it in."
     )
+    if free_slots_context:
+        closing += (
+            " This email is requesting a meeting. "
+            "Propose the specific available time slots listed above. "
+            "Do not invent or guess times — only use the slots provided."
+        )
+    parts.append(f"\n{closing}")
 
     return "\n\n".join(parts)
 

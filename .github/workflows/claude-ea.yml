@@ -1,0 +1,66 @@
+name: Claude Code — EA Email Assistant
+
+# Runs Claude Code on a schedule with the same cadence as the Python EA.
+# Claude reads CLAUDE.md for project context, then runs the assistant.
+#
+# Enable this workflow by setting the repository variable:
+#   CLAUDE_EA_ENABLED = true
+# Disable it by removing the variable or setting it to false.
+
+on:
+  schedule:
+    - cron: '0 12 * * *'   #  7:00 AM ET
+    - cron: '0 17 * * *'   # 12:00 PM ET
+    - cron: '0 22 * * *'   #  5:00 PM ET
+    - cron: '0 1  * * *'   #  8:00 PM ET
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — analyse emails but do not create drafts'
+        required: false
+        default: 'false'
+        type: boolean
+      prompt:
+        description: 'Override the default prompt (leave blank for standard run)'
+        required: false
+        default: ''
+
+jobs:
+  claude-ea:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: vars.CLAUDE_EA_ENABLED == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run EA via Claude Code
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            ${{ github.event.inputs.prompt || format(
+              'Run the EA email assistant. DRY_RUN={0}. Follow the steps in CLAUDE.md: classify incoming emails, archive newsletters, draft replies for the rest. Use the /dry-run command pattern from .claude/commands/dry-run.md.',
+              github.event.inputs.dry_run || 'false'
+            ) }}
+        env:
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_PAGE_IDS: ${{ secrets.NOTION_PAGE_IDS }}
+          HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+          ASHBY_API_KEY: ${{ secrets.ASHBY_API_KEY }}
+          GOOGLE_CALENDAR_ENABLED: ${{ vars.GOOGLE_CALENDAR_ENABLED || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          MAX_EMAILS: '10'

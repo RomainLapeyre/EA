@@ -1,12 +1,14 @@
 """Gmail API client — fetch unread emails and create draft replies."""
 
 import base64
+import html as _html
 import logging
 import re
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import html2text
+import html2text  # used in _extract_body
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -15,6 +17,7 @@ from googleapiclient.errors import HttpError
 logger = logging.getLogger(__name__)
 
 PROCESSED_LABEL = "EA/Processed"
+NEWSLETTER_LABEL = "EA/Newsletter"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
@@ -37,6 +40,7 @@ class GmailClient:
         creds.refresh(Request())
         self.service = build("gmail", "v1", credentials=creds)
         self._processed_label_id = self._get_or_create_label(PROCESSED_LABEL)
+        self._newsletter_label_id = self._get_or_create_label(NEWSLETTER_LABEL)
 
     # ------------------------------------------------------------------
     # Label management
@@ -72,21 +76,40 @@ class GmailClient:
     # Fetching emails
     # ------------------------------------------------------------------
 
-    def get_unprocessed_emails(self, max_results: int = 10) -> list[dict]:
-        """Return up to *max_results* unread inbox emails not yet processed."""
-        query = f"is:unread in:inbox -label:{PROCESSED_LABEL}"
+    def get_draft_thread_ids(self) -> set[str]:
+        """Return the set of thread IDs that already have a draft."""
         try:
-            result = (
-                self.service.users()
-                .messages()
-                .list(userId="me", q=query, maxResults=max_results)
-                .execute()
-            )
+            result = self.service.users().drafts().list(userId="me").execute()
+            thread_ids: set[str] = set()
+            for draft in result.get("drafts", []):
+                tid = draft.get("message", {}).get("threadId")
+                if tid:
+                    thread_ids.add(tid)
+            return thread_ids
+        except HttpError as exc:
+            logger.warning("Could not fetch existing drafts: %s", exc)
+            return set()
+
+    def get_unprocessed_emails(self) -> list[dict]:
+        """Return all primary inbox emails not yet processed and without existing drafts."""
+        query = f"in:inbox category:primary -label:{PROCESSED_LABEL}"
+        draft_thread_ids = self.get_draft_thread_ids()
+        try:
             emails = []
-            for ref in result.get("messages", []):
-                parsed = self._parse_message(ref["id"])
-                if parsed and not self._is_automated(parsed):
-                    emails.append(parsed)
+            page_token = None
+            while True:
+                kwargs: dict = {"userId": "me", "q": query}
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                result = self.service.users().messages().list(**kwargs).execute()
+                for ref in result.get("messages", []):
+                    parsed = self._parse_message(ref["id"])
+                    if parsed and not self._is_automated(parsed):
+                        if parsed["thread_id"] not in draft_thread_ids:
+                            emails.append(parsed)
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
             return emails
         except HttpError as exc:
             logger.error("Error listing emails: %s", exc)
@@ -113,6 +136,7 @@ class GmailClient:
             message_id_header = headers.get("message-id", "")
 
             body = self._extract_body(msg["payload"])
+            attachments = self._extract_attachment_metadata(msg["payload"])
 
             return {
                 "id": message_id,
@@ -127,6 +151,7 @@ class GmailClient:
                 "body": body,
                 "snippet": msg.get("snippet", ""),
                 "raw_headers": headers,
+                "attachments": attachments,
             }
         except HttpError as exc:
             logger.error("Error parsing message %s: %s", message_id, exc)
@@ -159,12 +184,75 @@ class GmailClient:
             return ""
 
     # ------------------------------------------------------------------
+    # Signature
+    # ------------------------------------------------------------------
+
+    def get_signature(self) -> str:
+        """Return the raw HTML of the user's primary Gmail signature.
+
+        Requires the gmail.settings.basic scope.  Returns an empty string if
+        the scope is missing or no signature is configured.
+        """
+        try:
+            result = (
+                self.service.users()
+                .settings()
+                .sendAs()
+                .list(userId="me")
+                .execute()
+            )
+            for send_as in result.get("sendAs", []):
+                if send_as.get("isDefault"):
+                    return send_as.get("signature", "")
+            return ""
+        except HttpError as exc:
+            logger.warning("Could not fetch Gmail signature: %s", exc)
+            return ""
+
+    # ------------------------------------------------------------------
     # Drafts
     # ------------------------------------------------------------------
 
-    def create_draft_reply(self, original_email: dict, draft_body: str) -> str:
-        """Create a Gmail draft as a reply to *original_email*."""
-        msg = MIMEMultipart()
+    def create_draft_reply(
+        self,
+        original_email: dict,
+        draft_body: str,
+        signature: str = "",
+        attachments: list[dict] | None = None,
+    ) -> str:
+        """Create a Gmail draft as a reply to *original_email*.
+
+        The draft is sent as HTML so that the signature (raw Gmail HTML) renders
+        with working hyperlinks. If *signature* is provided it is appended after
+        the body, separated by the conventional ``--`` delimiter.
+
+        *attachments* is an optional list of dicts with keys ``filename`` (str)
+        and ``data`` (bytes). Each entry is attached as a PDF.
+        """
+        body_html = _text_to_html(draft_body)
+        if signature:
+            html = (
+                f"<div>{body_html}</div>"
+                f"<div><br></div>"
+                f"<div>--&nbsp;</div>"
+                f"{signature}"
+            )
+        else:
+            html = f"<div>{body_html}</div>"
+
+        if attachments:
+            msg: MIMEMultipart | MIMEText = MIMEMultipart("mixed")
+            msg.attach(MIMEText(html, "html", "utf-8"))
+            for att in attachments:
+                part = MIMEApplication(att["data"], _subtype="pdf")
+                part.add_header(
+                    "Content-Disposition", "attachment", filename=att["filename"]
+                )
+                msg.attach(part)
+                logger.info("Attaching PDF '%s' (%d bytes)", att["filename"], len(att["data"]))
+        else:
+            msg = MIMEText(html, "html", "utf-8")
+
         msg["To"] = original_email["from"]
         msg["Subject"] = (
             original_email["subject"]
@@ -174,7 +262,6 @@ class GmailClient:
         if original_email["message_id_header"]:
             msg["In-Reply-To"] = original_email["message_id_header"]
             msg["References"] = original_email["message_id_header"]
-        msg.attach(MIMEText(draft_body, "plain"))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         draft = (
@@ -205,6 +292,51 @@ class GmailClient:
             id=message_id,
             body={"addLabelIds": [self._processed_label_id]},
         ).execute()
+
+    def archive_as_newsletter(self, message_id: str) -> None:
+        """Label as EA/Newsletter, remove from inbox, and mark processed."""
+        self.service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={
+                "addLabelIds": [self._newsletter_label_id, self._processed_label_id],
+                "removeLabelIds": ["INBOX", "UNREAD"],
+            },
+        ).execute()
+
+    # ------------------------------------------------------------------
+    # Attachments
+    # ------------------------------------------------------------------
+
+    def _extract_attachment_metadata(self, payload: dict) -> list[dict]:
+        """Return a list of PDF attachment descriptors found in *payload*.
+
+        Each descriptor has ``filename`` and ``attachment_id`` keys.
+        Inline parts (no filename) are skipped.
+        """
+        results: list[dict] = []
+        mime = payload.get("mimeType", "")
+        body = payload.get("body", {})
+        filename = payload.get("filename", "")
+
+        if filename and mime == "application/pdf" and body.get("attachmentId"):
+            results.append({"filename": filename, "attachment_id": body["attachmentId"]})
+
+        for part in payload.get("parts", []):
+            results.extend(self._extract_attachment_metadata(part))
+
+        return results
+
+    def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Download and return the raw bytes of a Gmail message attachment."""
+        result = (
+            self.service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        return base64.urlsafe_b64decode(result["data"])
 
     # ------------------------------------------------------------------
     # Body extraction
@@ -243,6 +375,17 @@ class GmailClient:
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
+
+def _text_to_html(text: str) -> str:
+    """Convert a plain-text email body to simple HTML.
+
+    Double newlines become paragraph breaks; single newlines become <br>.
+    """
+    paragraphs = _html.escape(text).split("\n\n")
+    return "".join(
+        f"<p>{para.replace(chr(10), '<br>')}</p>" for para in paragraphs
+    )
+
 
 def _extract_email(header: str) -> str:
     match = re.search(r"<(.+?)>", header)

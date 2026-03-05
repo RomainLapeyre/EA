@@ -30,6 +30,8 @@ except ImportError:
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.settings.basic",  # needed to read your signature
+    "https://www.googleapis.com/auth/calendar.readonly",     # needed to check your calendar
 ]
 
 
@@ -61,7 +63,9 @@ def main() -> None:
     print()
 
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-    creds = flow.run_local_server(port=0)
+    # prompt="consent" forces Google to show the full consent screen even if
+    # the app was previously authorized, so the new calendar scope is included.
+    creds = flow.run_local_server(port=0, prompt="consent")
 
     print()
     print("=" * 60)
