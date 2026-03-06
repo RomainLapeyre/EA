@@ -57,6 +57,7 @@ jobs:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           NOTION_PAGE_IDS: ${{ secrets.NOTION_PAGE_IDS }}
+          NOTION_INVESTOR_CRM_ID: ${{ secrets.NOTION_INVESTOR_CRM_ID }}
 
           # --- HubSpot (optional) ---
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
