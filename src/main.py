@@ -14,6 +14,8 @@ from calendar_context import CalendarContextClient
 from gmail_client import GmailClient
 from hubspot_context import HubSpotContextClient
 from notion_context import NotionContextClient
+from notion_memory import NotionMemoryClient
+from slack_client import SlackNotifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +75,22 @@ def main() -> None:
         logger.info("Initialising Ashby client…")
         ashby = AshbyContextClient(api_key=os.environ["ASHBY_API_KEY"])
 
+    memory: NotionMemoryClient | None = None
+    if os.environ.get("NOTION_API_KEY") and (
+        os.environ.get("NOTION_SKILLS_PAGE_ID") or os.environ.get("NOTION_MEMORY_PAGE_ID")
+    ):
+        logger.info("Initialising Notion memory/skills client…")
+        memory = NotionMemoryClient(
+            api_key=os.environ["NOTION_API_KEY"],
+            skills_page_id=os.environ.get("NOTION_SKILLS_PAGE_ID"),
+            memory_page_id=os.environ.get("NOTION_MEMORY_PAGE_ID"),
+        )
+
+    slack: SlackNotifier | None = None
+    if os.environ.get("SLACK_WEBHOOK_URL"):
+        logger.info("Slack notifications enabled.")
+        slack = SlackNotifier(webhook_url=os.environ["SLACK_WEBHOOK_URL"])
+
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
 
     if dry_run:
@@ -94,6 +112,17 @@ def main() -> None:
 
     processed = 0
     errors = 0
+    drafted = 0
+    archived = 0
+    memories_added = 0
+
+    # Read skills and memory once per run (not per email — saves API calls)
+    skills_context = memory.get_skills_context() if memory else ""
+    memory_context = memory.get_memory_context() if memory else ""
+    if skills_context:
+        logger.info("Loaded EA skills context (%d chars).", len(skills_context))
+    if memory_context:
+        logger.info("Loaded EA memory context (%d chars).", len(memory_context))
 
     for email in emails:
         subject = email["subject"][:70]
@@ -108,6 +137,7 @@ def main() -> None:
                 if not dry_run:
                     gmail.archive_as_newsletter(email["id"])
                 processed += 1
+                archived += 1
                 continue
 
             # Gather thread history for better context
@@ -164,6 +194,8 @@ def main() -> None:
                 ashby_context=ashby_context,
                 calendar_context=calendar_context,
                 free_slots_context=free_slots_context,
+                skills_context=skills_context,
+                memory_context=memory_context,
             )
 
             # Download any PDF attachments from the original email so they
@@ -193,6 +225,14 @@ def main() -> None:
                 )
                 gmail.mark_as_processed(email["id"])
 
+                # Extract and store any memory-worthy facts
+                if memory:
+                    items = ai.extract_memory_items(email, draft_body)
+                    for category, fact in items:
+                        memory.append_memory(category, fact)
+                        memories_added += 1
+
+            drafted += 1
             processed += 1
             logger.info("Done: '%s'", subject)
 
@@ -204,11 +244,22 @@ def main() -> None:
     # Summary
     # ------------------------------------------------------------------
     logger.info(
-        "Finished. Processed: %d  |  Errors: %d  |  Dry-run: %s",
-        processed,
+        "Finished. Drafted: %d  |  Archived: %d  |  Errors: %d  |  Memories: %d  |  Dry-run: %s",
+        drafted,
+        archived,
         errors,
+        memories_added,
         dry_run,
     )
+
+    if slack:
+        slack.post_run_summary(
+            drafted=drafted,
+            archived=archived,
+            errors=errors,
+            memories_added=memories_added,
+            dry_run=dry_run,
+        )
 
     if errors > 0 and processed == 0:
         sys.exit(1)

@@ -1,0 +1,5 @@
+# Dependencies for src/slack_bot.py — deploy separately (e.g. Fly.io, Railway)
+flask>=3.0.0
+notion-client>=2.2.1
+requests>=2.31.0
+gunicorn>=21.0.0

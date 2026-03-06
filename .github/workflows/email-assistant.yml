@@ -6,6 +6,8 @@ on:
     - cron: '0 17 * * *'   # 12:00 PM ET
     - cron: '0 22 * * *'   #  5:00 PM ET
     - cron: '0 1  * * *'   #  8:00 PM ET
+  repository_dispatch:
+    types: [ea-run]        # triggered by the Slack bot via GitHub API
   workflow_dispatch:
     inputs:
       max_emails:
@@ -53,10 +55,17 @@ jobs:
           # --- Anthropic / Claude (required) ---
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-          # --- Notion (optional) ---
+          # --- Notion knowledge base (optional) ---
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           NOTION_PAGE_IDS: ${{ secrets.NOTION_PAGE_IDS }}
+
+          # --- Notion private Skills + Memory pages (optional) ---
+          NOTION_SKILLS_PAGE_ID: ${{ secrets.NOTION_SKILLS_PAGE_ID }}
+          NOTION_MEMORY_PAGE_ID: ${{ secrets.NOTION_MEMORY_PAGE_ID }}
+
+          # --- Slack run notifications (optional) ---
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
           # --- HubSpot (optional) ---
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
@@ -71,5 +80,5 @@ jobs:
 
           # --- Behaviour ---
           MAX_EMAILS: ${{ github.event.inputs.max_emails || '10' }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || github.event.client_payload.dry_run || 'false' }}
         run: python src/main.py

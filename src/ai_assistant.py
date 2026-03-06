@@ -79,6 +79,44 @@ class AIAssistant:
             return "reply"
         return "skip"
 
+    def extract_memory_items(self, email: dict, draft: str) -> list[tuple[str, str]]:
+        """Return (category, fact) pairs worth storing from this email interaction.
+
+        Uses the cheap Haiku model.  Returns an empty list if nothing is notable.
+        Categories: People, Companies, Projects, Preferences, Misc.
+        """
+        prompt = (
+            f"From: {email['from']}\n"
+            f"Subject: {email['subject']}\n"
+            f"Body excerpt: {email['body'][:400]}\n\n"
+            f"Draft reply excerpt: {draft[:300]}\n\n"
+            "Identify facts worth storing in long-term memory for future emails.\n"
+            "Only extract genuinely useful, durable facts (preferences, key contacts,\n"
+            "ongoing projects, decisions made). Skip transient details.\n"
+            "If nothing is worth storing, reply exactly: NONE\n"
+            "Otherwise, one fact per line as:  CATEGORY: fact\n"
+            "Valid categories: People, Companies, Projects, Preferences, Misc"
+        )
+        try:
+            response = self.client.messages.create(
+                model=_CLASSIFY_MODEL,
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            result = response.content[0].text.strip()
+            if result.upper() == "NONE":
+                return []
+            items = []
+            for line in result.splitlines():
+                if ":" in line:
+                    category, fact = line.split(":", 1)
+                    cat = category.strip().title()
+                    items.append((cat, fact.strip()))
+            return items
+        except Exception as exc:
+            logger.warning("Memory extraction failed: %s", exc)
+            return []
+
     def generate_draft_reply(
         self,
         email: dict,
@@ -88,6 +126,8 @@ class AIAssistant:
         ashby_context: str = "",
         calendar_context: str = "",
         free_slots_context: str = "",
+        skills_context: str = "",
+        memory_context: str = "",
     ) -> str:
         """Return a draft reply body for *email*."""
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
@@ -106,6 +146,8 @@ class AIAssistant:
             ashby_context=ashby_context,
             calendar_context=calendar_context,
             free_slots_context=free_slots_context,
+            skills_context=skills_context,
+            memory_context=memory_context,
         )
 
         logger.debug("Sending email to Claude for drafting (subject: %s)", email["subject"])
@@ -134,6 +176,8 @@ def _build_user_message(
     ashby_context: str = "",
     calendar_context: str = "",
     free_slots_context: str = "",
+    skills_context: str = "",
+    memory_context: str = "",
 ) -> str:
     parts = []
 
@@ -158,6 +202,12 @@ def _build_user_message(
         parts.append(f"\n{free_slots_context}")
     elif calendar_context:
         parts.append(f"\n{calendar_context}")
+
+    if skills_context:
+        parts.append(f"\n{skills_context}")
+
+    if memory_context:
+        parts.append(f"\n{memory_context}")
 
     if notion_context:
         parts.append(f"\n{notion_context}")
