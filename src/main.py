@@ -12,6 +12,7 @@ from ai_assistant import AIAssistant
 from ashby_context import AshbyContextClient
 from calendar_context import CalendarContextClient
 from gmail_client import GmailClient
+from granola_context import GranolaContextClient
 from hubspot_context import HubSpotContextClient
 from investor_crm import InvestorCRMClient
 from notion_context import NotionContextClient
@@ -68,6 +69,11 @@ def main() -> None:
             client_secret=_require("GMAIL_CLIENT_SECRET"),
             refresh_token=_require("GMAIL_REFRESH_TOKEN"),
         )
+
+    granola: GranolaContextClient | None = None
+    if os.environ.get("GRANOLA_REFRESH_TOKEN"):
+        logger.info("Initialising Granola client…")
+        granola = GranolaContextClient(refresh_token=os.environ["GRANOLA_REFRESH_TOKEN"])
 
     ashby: AshbyContextClient | None = None
     if os.environ.get("ASHBY_API_KEY"):
@@ -137,6 +143,13 @@ def main() -> None:
             if hubspot:
                 hubspot_context = hubspot.get_contact_context(sender)
 
+            granola_context = ""
+            if granola:
+                from_name = email.get("from_name", "")
+                granola_context = granola.get_meeting_context(sender, from_name)
+                if granola_context:
+                    logger.info("Granola context found for %s", sender)
+
             ashby_context = ""
             is_candidate = False
             if ashby:
@@ -180,6 +193,7 @@ def main() -> None:
                 notion_context=notion_context,
                 hubspot_context=hubspot_context,
                 ashby_context=ashby_context,
+                granola_context=granola_context,
                 calendar_context=calendar_context,
                 free_slots_context=free_slots_context,
             )

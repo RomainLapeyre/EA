@@ -69,6 +69,9 @@ jobs:
           # --- Ashby ATS (optional) ---
           ASHBY_API_KEY: ${{ secrets.ASHBY_API_KEY }}
 
+          # --- Granola meeting notes (optional) ---
+          GRANOLA_REFRESH_TOKEN: ${{ secrets.GRANOLA_REFRESH_TOKEN }}
+
           # --- Google Calendar (optional) ---
           # Set the repository variable GOOGLE_CALENDAR_ENABLED=true to activate.
           # The GMAIL_REFRESH_TOKEN must be re-authorised with calendar.readonly scope.
