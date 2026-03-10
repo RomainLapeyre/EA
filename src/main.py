@@ -124,8 +124,12 @@ def main() -> None:
                 hubspot_context = hubspot.get_contact_context(sender)
 
             ashby_context = ""
+            is_candidate = False
             if ashby:
                 ashby_context = ashby.get_candidate_context(sender)
+                if ashby_context:
+                    is_candidate = True
+                    logger.info("Ashby candidate found for %s — will tag as recruiting", sender)
 
             calendar_context = ""
             free_slots_context = ""
@@ -183,7 +187,8 @@ def main() -> None:
                     f"\n[Attachments: {', '.join(a['filename'] for a in pdf_attachments)}]"
                     if pdf_attachments else ""
                 )
-                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}{sig_preview}{att_note}\n")
+                recruiting_note = "\n[Tagged: EA/Recruiting]" if is_candidate else ""
+                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}{sig_preview}{att_note}{recruiting_note}\n")
             else:
                 gmail.create_draft_reply(
                     original_email=email,
@@ -191,6 +196,8 @@ def main() -> None:
                     signature=signature,
                     attachments=pdf_attachments or None,
                 )
+                if is_candidate:
+                    gmail.tag_as_recruiting(email["id"])
                 gmail.mark_as_processed(email["id"])
 
             processed += 1

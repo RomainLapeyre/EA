@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 PROCESSED_LABEL = "EA/Processed"
 NEWSLETTER_LABEL = "EA/Newsletter"
+RECRUITING_LABEL = "EA/Recruiting"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
@@ -41,6 +42,7 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=creds)
         self._processed_label_id = self._get_or_create_label(PROCESSED_LABEL)
         self._newsletter_label_id = self._get_or_create_label(NEWSLETTER_LABEL)
+        self._recruiting_label_id = self._get_or_create_label(RECRUITING_LABEL)
         self._my_email = self._fetch_my_email()
 
     # ------------------------------------------------------------------
@@ -335,6 +337,14 @@ class GmailClient:
             userId="me",
             id=message_id,
             body={"addLabelIds": [self._processed_label_id]},
+        ).execute()
+
+    def tag_as_recruiting(self, message_id: str) -> None:
+        """Add the EA/Recruiting label to a message from a known candidate."""
+        self.service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"addLabelIds": [self._recruiting_label_id]},
         ).execute()
 
     def archive_as_newsletter(self, message_id: str) -> None:
