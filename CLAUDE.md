@@ -15,6 +15,7 @@ archives junk automatically, and creates Gmail draft replies for the rest.
 | `src/hubspot_context.py` | HubSpot CRM contact context |
 | `src/ashby_context.py` | Ashby ATS candidate context |
 | `src/notion_context.py` | Notion knowledge-base context |
+| `src/investor_crm.py` | Investor detection + Notion fundraising CRM write |
 | `config/persona.yaml` | Romain's writing style and persona |
 | `scripts/setup_gmail_auth.py` | One-time OAuth token generator |
 
@@ -62,6 +63,6 @@ Use the `/add-source` command or follow `src/hubspot_context.py` as a template.
 | `ANTHROPIC_API_KEY` | ✓ | Claude API |
 | `HUBSPOT_ACCESS_TOKEN` | optional | CRM context |
 | `ASHBY_API_KEY` | optional | ATS context |
-| `NOTION_API_KEY` | optional | KB context |
+| `NOTION_API_KEY` | optional | KB context + investor CRM |
 | `GRANOLA_REFRESH_TOKEN` | optional | Granola meeting notes context |
 | `GOOGLE_CALENDAR_ENABLED` | optional var | Calendar context |

@@ -79,6 +79,56 @@ class AIAssistant:
             return "reply"
         return "skip"
 
+    def classify_investor_interaction(self, email: dict, thread_history: str = "") -> dict:
+        """Analyse an email thread and return investor classification metadata.
+
+        Returns a dict with:
+          - ``is_investor``   (bool): sender appears to be a VC / angel / investor
+          - ``positive_reply`` (bool): Romain replied positively (interested, agreed to meet, etc.)
+          - ``investor_name`` (str): best-guess full name of the investor
+          - ``firm``          (str): investor's firm / fund name, or ""
+        """
+        prompt = (
+            f"Subject: {email['subject']}\n"
+            f"From: {email['from']}\n\n"
+            f"=== Thread history ===\n{thread_history}\n\n"
+            f"=== Latest email ===\n{email['body'][:1500]}\n\n"
+            "Answer the following questions about this email thread. "
+            "Reply in exactly this JSON format (no markdown, no extra text):\n"
+            '{"is_investor": true/false, '
+            '"positive_reply": true/false, '
+            '"investor_name": "...", '
+            '"firm": "..."}\n\n'
+            "Rules:\n"
+            "- is_investor: true if the sender is a venture capitalist, angel investor, "
+            "fund manager, LP, or anyone reaching out in the context of fundraising / investing.\n"
+            "- positive_reply: true if Romain (the recipient) has replied to this thread "
+            "with a positive or interested tone (agreed to meet, expressed interest, "
+            "confirmed availability, said yes). False if Romain has not yet replied, "
+            "replied negatively, or the thread contains only the investor's email.\n"
+            "- investor_name: full name of the investor extracted from the email headers or body.\n"
+            "- firm: name of the investor's firm or fund, or empty string if unknown.\n"
+            "Reply with ONLY the JSON object."
+        )
+        response = self.client.messages.create(
+            model=_CLASSIFY_MODEL,
+            max_tokens=120,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        try:
+            import json
+            data = json.loads(raw)
+            return {
+                "is_investor": bool(data.get("is_investor", False)),
+                "positive_reply": bool(data.get("positive_reply", False)),
+                "investor_name": str(data.get("investor_name", "")),
+                "firm": str(data.get("firm", "")),
+            }
+        except Exception:
+            logger.warning("Could not parse investor classification JSON: %r", raw)
+            return {"is_investor": False, "positive_reply": False, "investor_name": "", "firm": ""}
+
     def generate_draft_reply(
         self,
         email: dict,

@@ -14,6 +14,7 @@ from calendar_context import CalendarContextClient
 from gmail_client import GmailClient
 from granola_context import GranolaContextClient
 from hubspot_context import HubSpotContextClient
+from investor_crm import InvestorCRMClient
 from notion_context import NotionContextClient
 
 logging.basicConfig(
@@ -78,6 +79,19 @@ def main() -> None:
     if os.environ.get("ASHBY_API_KEY"):
         logger.info("Initialising Ashby client…")
         ashby = AshbyContextClient(api_key=os.environ["ASHBY_API_KEY"])
+
+    # Fundraising CRM database ID — hardcoded from the Notion page URL anchor.
+    # Override via NOTION_INVESTOR_CRM_ID if you ever point this at a different DB.
+    _INVESTOR_CRM_DB_ID = os.environ.get(
+        "NOTION_INVESTOR_CRM_ID", "2a9ef5b9e6b74181b507c98b2c859eae"
+    )
+    investor_crm: InvestorCRMClient | None = None
+    if os.environ.get("NOTION_API_KEY"):
+        logger.info("Initialising Investor CRM client…")
+        investor_crm = InvestorCRMClient(
+            notion_api_key=os.environ["NOTION_API_KEY"],
+            crm_database_id=_INVESTOR_CRM_DB_ID,
+        )
 
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
 
@@ -213,6 +227,28 @@ def main() -> None:
                 if is_candidate:
                     gmail.tag_as_recruiting(email["id"])
                 gmail.mark_as_processed(email["id"])
+
+            # ------------------------------------------------------------------
+            # Investor CRM — check if sender is an investor with a positive
+            # interaction and a calendar event, then sync to Notion.
+            # ------------------------------------------------------------------
+            if investor_crm:
+                try:
+                    investor_meta = ai.classify_investor_interaction(email, thread_history)
+                    if investor_meta.get("is_investor"):
+                        calendar_svc = calendar.service if calendar else None
+                        added = investor_crm.process_email(
+                            email=email,
+                            investor_meta=investor_meta,
+                            calendar_service=calendar_svc,
+                        )
+                        if added:
+                            logger.info(
+                                "Added/updated investor '%s' in Notion CRM.",
+                                investor_meta.get("investor_name") or sender,
+                            )
+                except Exception:
+                    logger.warning("Investor CRM check failed for '%s'", subject, exc_info=True)
 
             processed += 1
             logger.info("Done: '%s'", subject)
