@@ -66,3 +66,5 @@ Use the `/add-source` command or follow `src/hubspot_context.py` as a template.
 | `NOTION_API_KEY` | optional | KB context + investor CRM |
 | `GRANOLA_REFRESH_TOKEN` | optional | Granola meeting notes context |
 | `GOOGLE_CALENDAR_ENABLED` | optional var | Calendar context |
+| `SLACK_USER_TOKEN` | optional | Slack API access (xoxp-...) |
+| `SLACK_BOT_TOKEN` | optional | Slack API access (xoxb-...) |
