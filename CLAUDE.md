@@ -18,7 +18,6 @@ archives junk automatically, and creates Gmail draft replies for the rest.
 | `src/investor_crm.py` | Investor detection + Notion fundraising CRM write |
 | `config/persona.yaml` | Romain's writing style and persona |
 | `scripts/setup_gmail_auth.py` | One-time OAuth token generator |
-| `scripts/manage_slack_channel.py` | Deprecate a Slack channel and recreate it as public |
 
 ## Running locally
 
@@ -67,5 +66,5 @@ Use the `/add-source` command or follow `src/hubspot_context.py` as a template.
 | `NOTION_API_KEY` | optional | KB context + investor CRM |
 | `GRANOLA_REFRESH_TOKEN` | optional | Granola meeting notes context |
 | `GOOGLE_CALENDAR_ENABLED` | optional var | Calendar context |
-| `SLACK_USER_TOKEN` | optional | Slack channel management (xoxp-...) — needs `channels:read`, `channels:write`, `groups:read`, `groups:write` |
-| `SLACK_BOT_TOKEN` | optional | Slack channel management (xoxb-...) — needs `channels:manage` |
+| `SLACK_USER_TOKEN` | optional | Slack API access (xoxp-...) |
+| `SLACK_BOT_TOKEN` | optional | Slack API access (xoxb-...) |
