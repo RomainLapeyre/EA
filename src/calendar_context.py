@@ -11,7 +11,12 @@ from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+# calendar.events is needed to update event descriptions (case-study enrichment).
+# Re-run scripts/setup_gmail_auth.py if you previously only authorised readonly.
+_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+]
 _LOOKAHEAD_DAYS = 7
 
 
@@ -86,6 +91,83 @@ class CalendarContextClient:
             lines.append(line)
 
         return "\n".join(lines)
+
+    def find_interview_event(self, candidate_email: str, lookahead_days: int = 30) -> dict | None:
+        """Return the next upcoming calendar event that includes *candidate_email* as attendee.
+
+        Searches the next *lookahead_days* days.  Returns the raw event dict or None.
+        """
+        now = datetime.now(timezone.utc)
+        end = now + timedelta(days=lookahead_days)
+        try:
+            result = (
+                self.service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=now.isoformat(),
+                    timeMax=end.isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=50,
+                )
+                .execute()
+            )
+        except HttpError as exc:
+            logger.warning("Calendar search for attendee %s failed: %s", candidate_email, exc)
+            return None
+
+        for ev in result.get("items", []):
+            if ev.get("status") == "cancelled":
+                continue
+            for att in ev.get("attendees", []):
+                if att.get("email", "").lower() == candidate_email.lower():
+                    return ev
+        return None
+
+    def update_event_with_case_study(
+        self,
+        event_id: str,
+        case_study_url: str,
+        linkedin_url: str,
+    ) -> bool:
+        """Append case study URL and LinkedIn profile to the event description.
+
+        Fetches the current event first to preserve existing description text.
+        Returns True on success.
+        """
+        try:
+            ev = self.service.events().get(calendarId="primary", eventId=event_id).execute()
+        except HttpError as exc:
+            logger.warning("Could not fetch event %s for update: %s", event_id, exc)
+            return False
+
+        existing_desc = ev.get("description", "") or ""
+
+        additions = []
+        if case_study_url:
+            additions.append(f"Case study: {case_study_url}")
+        if linkedin_url:
+            additions.append(f"LinkedIn: {linkedin_url}")
+
+        if not additions:
+            return True  # nothing to add
+
+        separator = "\n\n---\n" if existing_desc else ""
+        new_desc = existing_desc + separator + "\n".join(additions)
+
+        try:
+            self.service.events().patch(
+                calendarId="primary",
+                eventId=event_id,
+                body={"description": new_desc},
+            ).execute()
+            logger.info(
+                "Updated calendar event %s with case study/LinkedIn info.", event_id
+            )
+            return True
+        except HttpError as exc:
+            logger.warning("Could not update event %s: %s", event_id, exc)
+            return False
 
     def get_free_slots(
         self,

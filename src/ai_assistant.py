@@ -79,6 +79,47 @@ class AIAssistant:
             return "reply"
         return "skip"
 
+    def detect_case_study(self, email: dict) -> dict:
+        """Return {"is_case_study": bool, "case_study_url": str} for an email.
+
+        Looks for case study submissions — documents, Google Drive links, PDFs,
+        Notion pages, or any hosted file sent by a candidate as part of a hiring process.
+        ``case_study_url`` will be the best URL found, or "" if only an attachment.
+        """
+        attachments = email.get("attachments", [])
+        att_names = ", ".join(a["filename"] for a in attachments) if attachments else "none"
+        prompt = (
+            f"Subject: {email['subject']}\n"
+            f"From: {email['from']}\n"
+            f"Attachments: {att_names}\n\n"
+            f"{email['body'][:1500]}\n\n"
+            "Does this email contain a case study submission from a job candidate? "
+            "A case study is a work sample, assignment, or project document submitted "
+            "as part of a hiring/interview process (not a sales/marketing case study).\n"
+            "If yes, extract the best URL pointing to the case study document "
+            "(Google Drive, Notion, Dropbox, PDF link, etc.). "
+            "If it is only an email attachment with no URL, return an empty string for the URL.\n"
+            "Reply in exactly this JSON format (no markdown, no extra text):\n"
+            '{"is_case_study": true/false, "case_study_url": "..."}\n'
+            "Reply with ONLY the JSON object."
+        )
+        response = self.client.messages.create(
+            model=_CLASSIFY_MODEL,
+            max_tokens=80,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        try:
+            import json
+            data = json.loads(raw)
+            return {
+                "is_case_study": bool(data.get("is_case_study", False)),
+                "case_study_url": str(data.get("case_study_url", "")),
+            }
+        except Exception:
+            logger.warning("Could not parse case study detection JSON: %r", raw)
+            return {"is_case_study": False, "case_study_url": ""}
+
     def classify_investor_interaction(self, email: dict, thread_history: str = "") -> dict:
         """Analyse an email thread and return investor classification metadata.
 

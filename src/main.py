@@ -229,6 +229,56 @@ def main() -> None:
                 gmail.mark_as_processed(email["id"])
 
             # ------------------------------------------------------------------
+            # Case study processing — if the email is a candidate case study
+            # submission, enrich the calendar invite + HubSpot contact.
+            # ------------------------------------------------------------------
+            if ashby and is_candidate:
+                try:
+                    cs_meta = ai.detect_case_study(email)
+                    if cs_meta.get("is_case_study"):
+                        cs_url = cs_meta.get("case_study_url", "")
+                        logger.info(
+                            "Case study detected from %s (url: %s)", sender, cs_url or "attachment only"
+                        )
+                        # 1. Add note on Ashby candidate profile
+                        if cs_url and not dry_run:
+                            ashby.add_case_study_note(sender, cs_url)
+
+                        # 2. Find calendar event + update description
+                        if calendar:
+                            linkedin_url = ashby.get_candidate_linkedin(sender)
+                            event = calendar.find_interview_event(sender)
+                            if event:
+                                event_title = event.get("summary", event["id"])
+                                logger.info(
+                                    "Found interview event '%s' — updating with case study info.",
+                                    event_title,
+                                )
+                                if not dry_run:
+                                    calendar.update_event_with_case_study(
+                                        event_id=event["id"],
+                                        case_study_url=cs_url,
+                                        linkedin_url=linkedin_url,
+                                    )
+                                else:
+                                    print(
+                                        f"\n[DRY RUN] Would update calendar event '{event_title}'"
+                                        f"\n  Case study: {cs_url}"
+                                        f"\n  LinkedIn:   {linkedin_url}"
+                                        f"\n  Ashby note → {cs_url}\n"
+                                    )
+                            else:
+                                logger.info(
+                                    "No upcoming interview event found for %s.", sender
+                                )
+                        elif not dry_run and cs_url:
+                            logger.info(
+                                "Calendar not enabled — skipping event update for case study."
+                            )
+                except Exception:
+                    logger.warning("Case study processing failed for '%s'", subject, exc_info=True)
+
+            # ------------------------------------------------------------------
             # Investor CRM — check if sender is an investor with a positive
             # interaction and a calendar event, then sync to Notion.
             # ------------------------------------------------------------------
