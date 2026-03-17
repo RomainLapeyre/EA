@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 PROCESSED_LABEL = "EA/Processed"
 NEWSLETTER_LABEL = "EA/Newsletter"
 RECRUITING_LABEL = "EA/Recruiting"
+UNKNOWN_LABEL = "EA/Unknown"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
@@ -43,7 +44,8 @@ class GmailClient:
         self._processed_label_id = self._get_or_create_label(PROCESSED_LABEL)
         self._newsletter_label_id = self._get_or_create_label(NEWSLETTER_LABEL)
         self._recruiting_label_id = self._get_or_create_label(RECRUITING_LABEL)
-        self._my_email = self._fetch_my_email()
+        self._unknown_label_id = self._get_or_create_label(UNKNOWN_LABEL)
+        self.my_email = self._fetch_my_email()
 
     # ------------------------------------------------------------------
     # Label management
@@ -145,7 +147,7 @@ class GmailClient:
                 for h in last_msg["payload"].get("headers", [])
             }
             from_email = _extract_email(headers.get("from", ""))
-            if from_email.lower() == self._my_email.lower():
+            if from_email.lower() == self.my_email.lower():
                 logger.debug("Skipping thread %s — last message is from me.", thread_id)
                 return None
             return self._parse_message(last_msg["id"])
@@ -271,14 +273,9 @@ class GmailClient:
         """
         body_html = _text_to_html(draft_body)
         if signature:
-            html = (
-                f"<div>{body_html}</div>"
-                f"<div><br></div>"
-                f"<div>--&nbsp;</div>"
-                f"{signature}"
-            )
+            html = f"{body_html}<br><br>--&nbsp;<br>{signature}"
         else:
-            html = f"<div>{body_html}</div>"
+            html = body_html
 
         if attachments:
             msg: MIMEMultipart | MIMEText = MIMEMultipart("mixed")
@@ -295,8 +292,8 @@ class GmailClient:
 
         # Reply All: To = sender + original To recipients (minus self)
         #            Cc = original Cc recipients (minus self)
-        all_to = _merge_recipients(original_email["from"], original_email.get("to", ""), self._my_email)
-        all_cc = _filter_self(original_email.get("cc", ""), self._my_email)
+        all_to = _merge_recipients(original_email["from"], original_email.get("to", ""), self.my_email)
+        all_cc = _filter_self(original_email.get("cc", ""), self.my_email)
         msg["To"] = all_to
         if all_cc:
             msg["Cc"] = all_cc
@@ -345,6 +342,14 @@ class GmailClient:
             userId="me",
             id=message_id,
             body={"addLabelIds": [self._recruiting_label_id]},
+        ).execute()
+
+    def tag_as_unknown(self, message_id: str) -> None:
+        """Add the EA/Unknown label when the user was not a direct To recipient."""
+        self.service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"addLabelIds": [self._unknown_label_id]},
         ).execute()
 
     def archive_as_newsletter(self, message_id: str) -> None:
@@ -431,14 +436,8 @@ class GmailClient:
 # ------------------------------------------------------------------
 
 def _text_to_html(text: str) -> str:
-    """Convert a plain-text email body to simple HTML.
-
-    Double newlines become paragraph breaks; single newlines become <br>.
-    """
-    paragraphs = _html.escape(text).split("\n\n")
-    return "".join(
-        f"<p>{para.replace(chr(10), '<br>')}</p>" for para in paragraphs
-    )
+    """Convert a plain-text email body to minimal HTML using <br> line breaks."""
+    return _html.escape(text).replace("\n", "<br>\n")
 
 
 def _filter_self(recipients: str, my_email: str) -> str:

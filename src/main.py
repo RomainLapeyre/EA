@@ -209,6 +209,9 @@ def main() -> None:
                 except Exception:
                     logger.warning("Could not download attachment '%s'", att_meta["filename"])
 
+            # Detect if user was not a direct To recipient (e.g. CC'd or BCC'd)
+            is_unknown_recipient = gmail.my_email.lower() not in email.get("to", "").lower()
+
             if dry_run:
                 sig_preview = f"\n\n-- \n{signature}" if signature else ""
                 att_note = (
@@ -216,7 +219,8 @@ def main() -> None:
                     if pdf_attachments else ""
                 )
                 recruiting_note = "\n[Tagged: EA/Recruiting]" if is_candidate else ""
-                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}{sig_preview}{att_note}{recruiting_note}\n")
+                unknown_note = "\n[Tagged: EA/Unknown]" if is_unknown_recipient else ""
+                print(f"\n{'='*60}\nDRAFT for: {subject}\n{'='*60}\n{draft_body}{sig_preview}{att_note}{recruiting_note}{unknown_note}\n")
             else:
                 gmail.create_draft_reply(
                     original_email=email,
@@ -226,6 +230,8 @@ def main() -> None:
                 )
                 if is_candidate:
                     gmail.tag_as_recruiting(email["id"])
+                if is_unknown_recipient:
+                    gmail.tag_as_unknown(email["id"])
                 gmail.mark_as_processed(email["id"])
 
             # ------------------------------------------------------------------
